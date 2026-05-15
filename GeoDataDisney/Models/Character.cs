@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Text.Json.Serialization; // Necessário para usar o [JsonPropertyName]
 
-namespace GeoDataInsight.WPF.Models
+namespace GeoDataDisney.Models
 {
     public class Character
     {
