@@ -47,7 +47,7 @@ namespace GeoDataDisney.Services
             }
             catch (Exception ex)
             {
-                /// Se der algum erro (ex: sem internet), ele retorna nulo para não quebrar o aplicativo
+                /// Se der algum erro, ele retorna nulo para não quebrar o aplicativo
                 Console.WriteLine("Erro ao buscar dados: " + ex.Message);
                 return null;
             }
