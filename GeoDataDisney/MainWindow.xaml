@@ -57,7 +57,10 @@
 
                                 <StackPanel Grid.Row="1" VerticalAlignment="Center" Margin="10,0">
                                     <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="16" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
-                                    <Button Content="Ver Detalhes" Margin="0,10,0,0" Background="#004e92" Foreground="White" BorderThickness="0" Padding="10,5">
+                                    <Button Content="Ver Detalhes" 
+                                      Command="{Binding DataContext.ShowDetailsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                         CommandParameter="{Binding}"
+                                           Margin="0,10,0,0" Background="#004e92" Foreground="White" BorderThickness="0" Padding="10,5">
                                         <Button.Resources>
                                             <Style TargetType="Border">
                                                 <Setter Property="CornerRadius" Value="5"/>
