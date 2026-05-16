@@ -9,67 +9,157 @@ using GeoDataDisney.Services;
 namespace GeoDataDisney.ViewModels
 {
     /// <summary>
-    ///  Adiciona a interface INotifyPropertyChanged
+    /// ViewModel principal responsável por gerenciar a lógica de apresentação da MainWindow.
+    /// Intermedeia a comunicação entre a UI (View) e os serviços de dados (Model/Services).
     /// </summary>
     public class MainViewModel : INotifyPropertyChanged
     {
         private readonly DisneyService _disneyService;
-
-        public ObservableCollection<Character> Characters { get; set; }
-        public ICommand ShowDetailsCommand { get; }
+        private readonly SyncService _syncService; /// Serviço de persistência e integração
 
         /// <summary>
-        /// Cria uma propriedade privada para guardar o texto
+        /// Coleção observável de personagens. Qualquer alteração nesta lista reflete automaticamente na UI.
         /// </summary>
-        private string? _statusMessage;
+        public ObservableCollection<Character> Characters { get; set; }
 
         /// <summary>
-        ///  Cria a propriedade pública que a tela View vai ler
+        /// Comandos da Interface
+        /// </summary>
+        public ICommand ShowDetailsCommand { get; }
+        public ICommand SearchCommand { get; }
+        public ICommand NextPageCommand { get; }
+        public ICommand PreviousPageCommand { get; }
+
+        /// <summary>
+        /// Comando responsável por disparar a sincronização dos dados com o Firebase e a API externa.
+        /// </summary>
+        public ICommand SyncCommand { get; }
+
+        private string? _statusMessage;
+        /// <summary>
+        /// Mensagem de status exibida para o usuário.
         /// </summary>
         public string? StatusMessage
         {
-            get { return _statusMessage; }
+            get => _statusMessage;
+            set { _statusMessage = value; OnPropertyChanged(nameof(StatusMessage)); }
+        }
+
+        private string _searchText = "";
+        /// <summary>
+        /// Texto vinculado a barra de pesquisa da interface.
+        /// </summary>
+        public string SearchText
+        {
+            get => _searchText;
+            set { _searchText = value; OnPropertyChanged(nameof(SearchText)); }
+        }
+
+        private int _currentPage = 1;
+        /// <summary>
+        /// indice da página atual de paginação da API.
+        /// </summary>
+        public int CurrentPage
+        {
+            get => _currentPage;
             set
             {
-                _statusMessage = value;
-                OnPropertyChanged(nameof(StatusMessage)); // Avisa a tela que o texto mudou!
+                _currentPage = value;
+                OnPropertyChanged(nameof(CurrentPage));
+                OnPropertyChanged(nameof(PageDisplay));
             }
         }
 
+        /// <summary>
+        /// Texto formatado para exibição do número da página atual na interface.
+        /// </summary>
+        public string PageDisplay => $"Página {CurrentPage}";
+
+        /// <summary>
+        /// Inicializa os serviços, comandos e carrega a primeira página de dados.
+        /// </summary>
         public MainViewModel()
         {
             _disneyService = new DisneyService();
+            _syncService = new SyncService(); // Inicialização do novo serviço
             Characters = new ObservableCollection<Character>();
+
+            // Mapeamento dos Comandos
             ShowDetailsCommand = new RelayCommand(ShowDetails);
+            SearchCommand = new RelayCommand(_ => RealizarPesquisa());
+            NextPageCommand = new RelayCommand(_ => ProximaPagina());
+            PreviousPageCommand = new RelayCommand(_ => PaginaAnterior());
+            SyncCommand = new RelayCommand(SyncCharacter); 
 
             _ = LoadDataAsync();
         }
 
+        /// <summary>
+        /// Reinicia a paginação e busca personagens com base no texto de pesquisa.
+        /// </summary>
+        private void RealizarPesquisa()
+        {
+            CurrentPage = 1;
+            _ = LoadDataAsync();
+        }
+
+        /// <summary>
+        /// Avança para a próxima página de personagens na API da Disney.
+        /// </summary>
+        private void ProximaPagina()
+        {
+            CurrentPage++;
+            _ = LoadDataAsync();
+        }
+
+        /// <summary>
+        /// Retorna para a página anterior de personagens, impedindo navegação para páginas inválidas menores que 1.
+        /// </summary>
+        private void PaginaAnterior()
+        {
+            if (CurrentPage > 1)
+            {
+                CurrentPage--;
+                _ = LoadDataAsync();
+            }
+        }
+
+        /// <summary>
+        /// Método assíncrono que consome a API da Disney e atualiza a coleção de personagens na tela.
+        /// </summary>
         private async Task LoadDataAsync()
         {
-            /// Mostra a mensagem ANTES de ir na internet
-            StatusMessage = "Buscando personagens na Disney...";
+            StatusMessage = "Buscando personagens... ⏳";
+            Characters.Clear();
 
-            DisneyResponse? response = await _disneyService.GetCharactersAsync();
+            DisneyResponse? response = await _disneyService.GetCharactersAsync(CurrentPage, SearchText);
 
             if (response != null && response.Data != null)
             {
-                Characters.Clear();
                 foreach (var character in response.Data)
                 {
                     Characters.Add(character);
                 }
 
-                /// Limpa a mensagem quando os dados chegam
-                StatusMessage = "";
+                if (Characters.Count == 0)
+                {
+                    StatusMessage = "Nenhum personagem encontrado.";
+                }
+                else
+                {
+                    StatusMessage = "";
+                }
             }
             else
             {
-                /// Se der erro ex: sem internet, avisa ao usuário!
-                StatusMessage = "Falha ao buscar os dados. Verifique sua conexão. ❌";
+                StatusMessage = "Falha ao buscar os dados. Verifique a conexão.";
             }
         }
 
+        /// <summary>
+        /// Exibe uma caixa de diálogo com as mídias Filmes e Séries, associadas ao personagem.
+        /// </summary>
+        /// <param name="parameter">O objeto Character selecionado pelo usuário.</param>
         private void ShowDetails(object parameter)
         {
             if (parameter is Character character)
@@ -83,7 +173,48 @@ namespace GeoDataDisney.ViewModels
                                 MessageBoxImage.Information);
             }
         }
+
+        /// <summary>
+        /// Envia o personagem selecionado para o Firebase e para a API da colega.
+        /// Fornece feedback visual sobre o sucesso ou falha da operação.
+        /// </summary>
+        /// <param name="parameter">O objeto Character a ser sincronizado.</param>
+        private async void SyncCharacter(object parameter)
+        {
+            if (parameter is Character character)
+            {
+                StatusMessage = $"Sincronizando {character.Name}";
+
+                /// Executa a persistência através do serviço
+                bool salvouFirebase = await _syncService.SalvarNoFirebaseAsync(character);
+                bool enviouColega = await _syncService.EnviarParaColegaAsync(character);
+
+                /// Feedback visual para o usuário
+                if (salvouFirebase && enviouColega)
+                {
+                    MessageBox.Show($"{character.Name} foi salvo no Firebase e enviado para sua colega com sucesso!",
+                                    "Sucesso na Integração", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    string msgErro = "Ocorreu um problema de sincronização:\n";
+                    if (!salvouFirebase) msgErro += "- Falha ao salvar no Firebase.\n";
+                    if (!enviouColega) msgErro += "- Falha ao enviar para o endpoint externo.\n";
+
+                    MessageBox.Show(msgErro, "Aviso de Integração", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+
+                StatusMessage = "";
+            }
+        }
+
+        /// Implementação do INotifyPropertyChanged 
         public event PropertyChangedEventHandler? PropertyChanged;
+
+        /// <summary>
+        /// Notifica a interface de que uma propriedade sofreu alteração.
+        /// </summary>
+        /// <param name="propertyName">Nome da propriedade alterada.</param>
         protected void OnPropertyChanged(string propertyName)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
