@@ -1,4 +1,5 @@
 ﻿using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
@@ -7,23 +8,38 @@ using GeoDataDisney.Services;
 
 namespace GeoDataDisney.ViewModels
 {
-    public class MainViewModel
+    /// <summary>
+    ///  Adiciona a interface INotifyPropertyChanged
+    /// </summary>
+    public class MainViewModel : INotifyPropertyChanged
     {
         private readonly DisneyService _disneyService;
 
         public ObservableCollection<Character> Characters { get; set; }
+        public ICommand ShowDetailsCommand { get; }
 
         /// <summary>
-        ///  Propriedade do Comando
+        /// Cria uma propriedade privada para guardar o texto
         /// </summary>
-        public ICommand ShowDetailsCommand { get; }
+        private string? _statusMessage;
+
+        /// <summary>
+        ///  Cria a propriedade pública que a tela View vai ler
+        /// </summary>
+        public string? StatusMessage
+        {
+            get { return _statusMessage; }
+            set
+            {
+                _statusMessage = value;
+                OnPropertyChanged(nameof(StatusMessage)); // Avisa a tela que o texto mudou!
+            }
+        }
 
         public MainViewModel()
         {
             _disneyService = new DisneyService();
             Characters = new ObservableCollection<Character>();
-
-            /// Avisa que o comando vai disparar o método ShowDetails
             ShowDetailsCommand = new RelayCommand(ShowDetails);
 
             _ = LoadDataAsync();
@@ -31,6 +47,9 @@ namespace GeoDataDisney.ViewModels
 
         private async Task LoadDataAsync()
         {
+            /// Mostra a mensagem ANTES de ir na internet
+            StatusMessage = "Buscando personagens na Disney...";
+
             DisneyResponse? response = await _disneyService.GetCharactersAsync();
 
             if (response != null && response.Data != null)
@@ -40,19 +59,21 @@ namespace GeoDataDisney.ViewModels
                 {
                     Characters.Add(character);
                 }
+
+                /// Limpa a mensagem quando os dados chegam
+                StatusMessage = "";
+            }
+            else
+            {
+                /// Se der erro ex: sem internet, avisa ao usuário!
+                StatusMessage = "Falha ao buscar os dados. Verifique sua conexão. ❌";
             }
         }
 
-        /// <summary>
-        ///  O método que roda quando clica no botão
-        /// </summary>
-        /// <param name="parameter"></param>
         private void ShowDetails(object parameter)
         {
-            /// Verificamos se o parâmetro que o botão mandou é realmente um Personagem
             if (parameter is Character character)
             {
-                /// Formata as listas. Se vier vazio, escreve "Nenhum"
                 string filmes = character.Films != null && character.Films.Count > 0 ? string.Join(", ", character.Films) : "Nenhum";
                 string series = character.TvShows != null && character.TvShows.Count > 0 ? string.Join(", ", character.TvShows) : "Nenhuma";
 
@@ -61,6 +82,11 @@ namespace GeoDataDisney.ViewModels
                                 MessageBoxButton.OK,
                                 MessageBoxImage.Information);
             }
+        }
+        public event PropertyChangedEventHandler? PropertyChanged;
+        protected void OnPropertyChanged(string propertyName)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
     }
 }
